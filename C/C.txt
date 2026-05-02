@@ -1,0 +1,55 @@
+C1. How would you prove that our Xero API connection is working before checking invoices?
+Before calling any transactional endpoints like Invoices, the best way to verify the API connection is working is to call the /connections endpoint.
+Method: GET https://api.xero.com/connections
+Headers: Include Authorization: Bearer <valid_access_token>
+Purpose:
+Validates that the access token is still active.
+Returns a list of Xero organizations (tenants) your app has access to, including tenantId and organization name. This tenantId is required for all subsequent Accounting API calls.
+Success criteria: A 200 OK response with a JSON array of connection objects confirms that authentication, network connectivity, and basic permissions are working. If this succeeds but GET /Invoices fails, the issue is specific to the invoices request (e.g., headers, parameters, or data).
+
+C2. If /connections works but GET /Invoices fails, what would you check?
+Since /connections succeeds, authentication and basic connectivity are fine. For a failing GET /Invoices, check these three areas:
+Request Headers
+xero-tenant-id: This is the most common point of failure. You must include exactly the tenantId returned from /connections. If missing or incorrect, Xero cannot identify which organization to query and will return a permission error (e.g., 401 or 403).
+OAuth 2.0 Scopes
+Verify that the access token was granted the required scope for reading invoices: accounting.transactions.read. If your app only has scopes like openid and profile, it won't have access to accounting data.
+Request Path and Query Parameters
+URL path: Confirm you are using the correct endpoint: https://api.xero.com/api.xro/2.0/Invoices.
+Query parameters: Invalid or malformed parameters (e.g., Status=INVALID, wrong date format like dd/mm/yyyy instead of ISO yyyy-mm-dd) can cause 400 Bad Request errors.
+
+C3. What endpoint would you call to check invoices?
+To retrieve a list of invoices, call the Invoices endpoint of the Xero Accounting API.
+HTTP Method: GET
+Endpoint URL: https://api.xero.com/api.xro/2.0/Invoices
+Required header: xero-tenant-id (with a valid tenant ID from /connections)
+A successful request returns a 200 OK response containing a JSON structure with an array of invoices.
+
+C4. How would you check one specific invoice?
+You can check a single specific invoice using one of two methods:
+By Invoice ID (recommended – most precise)
+Method: GET
+URL: https://api.xero.com/api.xro/2.0/Invoices/{InvoiceID}
+Path parameter: Replace {InvoiceID} with the Xero internal GUID (e.g., 12345678-1234-1234-1234-123456789abc).
+This is the primary key and is guaranteed to be unique.
+By Invoice Number (user-friendly but less common)
+Method: GET
+URL: https://api.xero.com/api.xro/2.0/Invoices/{InvoiceNumber}
+Path parameter: Replace {InvoiceNumber} with the customer‑visible invoice number (e.g., INV-001).
+Invoice numbers are unique per organization but can be changed by users, so the ID is more reliable.
+Both requests require the xero-tenant-id header.
+
+C5. If the invoice API returns 429, how should the backend handle it?
+A 429 Too Many Requests error means you have exceeded Xero's rate limits. The default limit is 1,000 requests per 24 hours per organization, with stricter short‑burst limits. The backend should implement exponential backoff with jitter.
+Recommended handling steps:
+Catch the 429 error – Detect the HTTP status code in your API client.
+Do NOT retry immediately – Instant retries will worsen the overload and may lead to longer throttling.
+Implement exponential backoff + jitter
+Start with a base delay (e.g., 1 second).
+Double the delay after each consecutive failure (1s → 2s → 4s → 8s → …).
+Add jitter (random extra milliseconds, e.g., 0–1000ms) to avoid all clients retrying simultaneously.
+Set a maximum delay cap (e.g., 32 or 60 seconds).
+Set a maximum retry limit (e.g., 3–5 attempts). If all retries fail, propagate the error upstream.
+Honor the Retry-After header if present – Xero may include this response header with a suggested wait time in seconds. The backend should wait exactly that long before the next retry, overriding the exponential backoff calculation.
+Log the event – Record the timestamp, tenant ID, endpoint, and request details. This helps audit and optimize future API usage patterns (e.g., adding pagination or caching).
+Consider fallback / queuing – For non‑critical operations, the request can be queued and retried later. For user‑facing requests, return a polite error message and suggest trying again after a delay.
+
