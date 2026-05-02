@@ -49,6 +49,9 @@ def solve():
     # 输出结果
     with open('output.txt', 'w') as f:
         f.write("\n".join(results))
+    
+    for result in results:
+        print(result)
 
 if __name__ == "__main__":
     solve()
